@@ -1,0 +1,5 @@
+{
+  "name": "Virtual Try-On Mirror",
+  "description": "An AI-powered virtual mirror that detects a thumbs-up gesture to generate a virtual outfit try-on.",
+  "requestFramePermissions": ["camera"]
+}
