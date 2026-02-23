@@ -2,9 +2,34 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+async function withRetry<T>(operation: () => Promise<T>, maxRetries = 3, baseDelay = 1000): Promise<T> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      attempt++;
+      console.warn(`Attempt ${attempt} failed:`, error?.message || error);
+      
+      // Check if it's a 500, 503, or 429 error
+      const isRetryable = error?.status === 503 || error?.status === 500 || error?.status === 429 || error?.message?.includes('503') || error?.message?.includes('500') || error?.message?.includes('429');
+      
+      if (!isRetryable || attempt >= maxRetries) {
+        throw error;
+      }
+      
+      // Exponential backoff
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.log(`Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error("Max retries reached");
+}
+
 export async function checkThumbsUp(base64Image: string): Promise<boolean> {
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
@@ -22,7 +47,7 @@ export async function checkThumbsUp(base64Image: string): Promise<boolean> {
       config: {
         temperature: 0.1,
       },
-    });
+    }));
 
     const text = response.text?.trim().toUpperCase() || "";
     return text.includes("YES");
@@ -34,7 +59,7 @@ export async function checkThumbsUp(base64Image: string): Promise<boolean> {
 
 export async function guessMajor(base64Image: string): Promise<string> {
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
@@ -52,7 +77,7 @@ export async function guessMajor(base64Image: string): Promise<string> {
       config: {
         temperature: 0.7,
       },
-    });
+    }));
 
     const text = response.text?.trim().toLowerCase() || "";
     if (text.includes("it")) return "it";
@@ -71,7 +96,7 @@ export async function guessMajor(base64Image: string): Promise<string> {
 
 export async function generateOutfit(base64Image: string, majorPrompt: string): Promise<string | null> {
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-2.5-flash-image",
       contents: {
         parts: [
@@ -86,7 +111,7 @@ export async function generateOutfit(base64Image: string, majorPrompt: string): 
           },
         ],
       },
-    });
+    }));
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
